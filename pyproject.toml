@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "trade-cert-research"
+version = "0.1.0"
+description = "Evidence-first research infrastructure for US trade credentials"
+requires-python = ">=3.12"
+dependencies = [
+  "alembic>=1.15,<2",
+  "beautifulsoup4>=4.13,<5",
+  "httpx>=0.28,<1",
+  "langgraph>=1.0,<2",
+  "langgraph-checkpoint-postgres>=3.0,<4",
+  "pydantic>=2.11,<3",
+  "psycopg[binary]>=3.2,<4",
+  "pymupdf>=1.26,<2",
+  "sqlalchemy>=2.0,<3",
+  "typer>=0.16,<1",
+]
+
+[project.scripts]
+trade-research = "trade_research.cli:app"
+
+[dependency-groups]
+dev = ["pytest>=8.3,<10", "ruff>=0.12,<1"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/trade_research"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint.per-file-ignores]
+"src/trade_research/cli.py" = ["B008"]
