@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TradeCertificationRequirement",
+  "description": "Schema for data scraped and verified by the LangGraph pipeline regarding state and local trade certifications.",
+  "type": "object",
+  "properties": {
+    "jurisdiction": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "description": "The US State or DC."
+        },
+        "municipality": {
+          "type": "string",
+          "description": "The city/county if locally regulated, or 'Statewide'."
+        }
+      },
+      "required": [
+        "state",
+        "municipality"
+      ]
+    },
+    "trade": {
+      "type": "string",
+      "description": "e.g., Electrical, Plumbing, HVAC"
+    },
+    "classification": {
+      "type": "string",
+      "description": "e.g., Journeyman, Master, Contractor"
+    },
+    "certification_details": {
+      "type": "object",
+      "properties": {
+        "administering_body": {
+          "type": "string"
+        },
+        "exam_name": {
+          "type": "string"
+        },
+        "code_cycle": {
+          "type": "string",
+          "description": "e.g., NEC 2023, IPC 2021"
+        },
+        "passing_score": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "administering_body",
+        "exam_name"
+      ]
+    },
+    "feasibility_and_loe": {
+      "type": "object",
+      "properties": {
+        "data_availability_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "scraping_difficulty": {
+          "type": "string",
+          "enum": [
+            "Low",
+            "Medium",
+            "High"
+          ]
+        },
+        "estimated_hours_loe": {
+          "type": "number"
+        },
+        "confidence_level": {
+          "type": "string",
+          "enum": [
+            "Low",
+            "Medium",
+            "High"
+          ]
+        }
+      },
+      "required": [
+        "data_availability_score",
+        "scraping_difficulty",
+        "estimated_hours_loe"
+      ]
+    }
+  },
+  "required": [
+    "jurisdiction",
+    "trade",
+    "classification",
+    "certification_details",
+    "feasibility_and_loe"
+  ]
+}
