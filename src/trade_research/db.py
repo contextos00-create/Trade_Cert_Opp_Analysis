@@ -216,6 +216,33 @@ class NationwideRunRow(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class NationalJobRow(Base):
+    __tablename__ = "national_jobs"
+    __table_args__ = (
+        UniqueConstraint(
+            "nationwide_run_id",
+            "jurisdiction_code",
+            "locality_key",
+            "trade",
+            "credential_key",
+            "stage",
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    nationwide_run_id: Mapped[str] = mapped_column(ForeignKey("nationwide_runs.id"))
+    jurisdiction_code: Mapped[str] = mapped_column(ForeignKey("jurisdictions.code"))
+    locality_key: Mapped[str] = mapped_column(String(255), default="")
+    trade: Mapped[str] = mapped_column(ForeignKey("trades.name"))
+    credential_key: Mapped[str] = mapped_column(String(80), default="")
+    stage: Mapped[str] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(32), default="queued")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    source_urls: Mapped[list] = mapped_column(JSON, default=list)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    last_attempted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    research_run_id: Mapped[str | None] = mapped_column(ForeignKey("research_runs.id"))
+
+
 class CoverageRecordRow(Base):
     __tablename__ = "coverage_records"
     __table_args__ = (
@@ -285,11 +312,81 @@ def seed_primary_inventory(session: Session) -> int:
     return created
 
 
+FEDERAL_OVERLAYS = (("hvac", "epa_section_608"), ("refrigeration", "epa_section_608"))
+
+
+def seed_federal_overlays(session: Session) -> int:
+    """Queue the refrigerant overlay separately from state contractor credentials."""
+    if session.get(JurisdictionRow, "US") is None:
+        session.add(JurisdictionRow(code="US", name="United States", kind="federal"))
+    session.flush()
+    created = 0
+    for trade, credential in FEDERAL_OVERLAYS:
+        exists = session.scalar(
+            select(CoverageRecordRow).where(
+                CoverageRecordRow.primary_jurisdiction == "US",
+                CoverageRecordRow.trade == trade,
+                CoverageRecordRow.credential_key == credential,
+                CoverageRecordRow.locality_key == "",
+                CoverageRecordRow.effective_date_key == "current",
+            )
+        )
+        if exists is None:
+            session.add(
+                CoverageRecordRow(
+                    primary_jurisdiction="US",
+                    trade=trade,
+                    credential_key=credential,
+                    locality_key="",
+                    effective_date_key="current",
+                    status=CoverageStatus.NOT_STARTED.value,
+                    review_reason=["Federal refrigerant overlay not yet researched"],
+                )
+            )
+            created += 1
+    return created
+
+
+def seed_national_jobs(session: Session, run_id: str) -> int:
+    """Queue all required primary inventories and initial federal overlays."""
+    seed_primary_inventory(session)
+    seed_federal_overlays(session)
+    session.flush()
+    existing = {
+        (job.jurisdiction_code, job.trade, job.credential_key, job.stage)
+        for job in session.scalars(
+            select(NationalJobRow).where(NationalJobRow.nationwide_run_id == run_id)
+        )
+    }
+    created = 0
+    work = [
+        (code, trade, "", "inventory") for code in JURISDICTIONS for trade in REQUIRED_TRADES
+    ] + [("US", trade, credential, "federal_overlay") for trade, credential in FEDERAL_OVERLAYS]
+    for code, trade, credential, stage in work:
+        if (code, trade, credential, stage) not in existing:
+            session.add(
+                NationalJobRow(
+                    nationwide_run_id=run_id,
+                    jurisdiction_code=code,
+                    trade=trade,
+                    credential_key=credential,
+                    stage=stage,
+                )
+            )
+            created += 1
+    return created
+
+
 def audit_coverage(session: Session) -> dict:
     rows = list(session.scalars(select(CoverageRecordRow)))
-    inventory = [r for r in rows if not r.locality_key and not r.credential_key]
+    inventory = [
+        r
+        for r in rows
+        if r.primary_jurisdiction in JURISDICTIONS and not r.locality_key and not r.credential_key
+    ]
     expected = {(code, trade) for code in JURISDICTIONS for trade in REQUIRED_TRADES}
     found = {(r.primary_jurisdiction, r.trade) for r in inventory}
+    federal = {(r.trade, r.credential_key) for r in rows if r.primary_jurisdiction == "US"}
     counts = {
         status.value: sum(r.status == status.value for r in rows) for status in CoverageStatus
     }
@@ -304,6 +401,7 @@ def audit_coverage(session: Session) -> dict:
     complete = (
         scope_audited
         and found == expected
+        and set(FEDERAL_OVERLAYS).issubset(federal)
         and len(inventory) == len(expected)
         and all(
             r.status
@@ -315,6 +413,8 @@ def audit_coverage(session: Session) -> dict:
         "expected_primary_inventories": len(expected),
         "present_primary_inventories": len(found & expected),
         "missing_primary_inventories": len(expected - found),
+        "expected_federal_overlays": len(FEDERAL_OVERLAYS),
+        "present_federal_overlays": len(set(FEDERAL_OVERLAYS) & federal),
         "coverage_records": len(rows),
         "status_counts": counts,
         "scope_audited": scope_audited,

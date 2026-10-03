@@ -5,6 +5,9 @@ This repository has started the delivery sequence in
 The current code is an evidence-preserving foundation. It does **not** contain
 verified licensing rules or a completed national inventory.
 
+The source checks, architecture recommendation, and remaining blockers are in
+[the nationwide discovery findings](docs/nationwide-discovery-findings.md).
+
 ## Local setup
 
 Requires Python 3.12+, `uv`, Docker and Docker Compose. From this repository:
@@ -68,10 +71,10 @@ review reasons. Claims with unmatched quotations are rejected.
 
 ## Coverage and checks
 
-`nationwide seed` creates 392 `not_started` inventory records: 56 primary
-jurisdictions × seven required trades. It is idempotent and does not invent
-credential levels. Local authority and federal overlay inventories have not
-yet been expanded. These are inspectable with:
+`nationwide seed` creates 392 `not_started` primary inventory records: 56
+jurisdictions × seven required trades. It also queues two separate federal
+refrigerant overlay records. It is idempotent and does not invent credential
+levels or local authorities. These are inspectable with:
 
 ```bash
 uv run trade-research nationwide manifest
@@ -83,18 +86,30 @@ uv run pytest
 The audit intentionally exits nonzero until the national completion criteria
 are met. This is a coverage gate, not a test failure to bypass.
 
+`uv run trade-research nationwide run --max-jobs 20` starts or resumes a
+database-backed batch. Automated URL discovery requires `TRADE_SEARCH_API_KEY`;
+candidate extraction requires `TRADE_LLM_API_KEY`. A JSONL `--targets-file`
+can supply reviewed HTTPS targets without search. Each line must include
+`jurisdiction`, `trade`, and `url`, and may include `credential_level`,
+`locality`, `authority_tier`, `source_type`, and `publisher`. Scrapy respects
+robots.txt and stores fetched source bytes locally. A retrieved page remains
+pending review. The crawler also runs directly with `uv run scrapy crawl
+official -a targets_file=targets.jsonl -O crawl.jsonl`.
+
 ## Current delivery status and next work
 
 Implemented: request/evidence/claim/coverage contracts; 56-jurisdiction
 manifest; source retrieval and immutable raw store; exact quote, hash, offset
 and date checks; an initial LangGraph; PostgreSQL schema and Alembic migration;
-LangGraph PostgreSQL checkpoints; a pending coverage ledger and JSON/CSV export.
-The graph has a three-follow-up-round cap and a search adapter interface.
+LangGraph PostgreSQL checkpoints; a pending coverage ledger and JSON/CSV export;
+bounded Scrapy crawling; optional Brave search and model candidate adapters;
+and a resumable database queue for the 394 starting jobs. The child graph has a
+three-follow-up-round cap.
 
-Still required before nationwide use: official-source discovery and LLM
-extraction adapters; source-to-jurisdiction and semantic entailment validation;
-credential and local-authority inventories; human review decisions and
-publication rules; idempotent nationwide dispatch; change detection;
-representative gold cases; LangSmith tracing/evaluation; a coverage API and UI;
-and actual verified research for every required jurisdiction/trade/credential.
+Still required before nationwide use: a reviewed authority registry;
+source-to-jurisdiction and semantic entailment validation; credential and
+local-authority inventory expansion; human review decisions and publication
+rules; request-level Scrapy resumption; change detection; representative gold
+cases; LangSmith tracing/evaluation; a coverage API and UI; and actual verified
+research for every required jurisdiction/trade/credential.
 No national completion claim is made while any required record remains pending.

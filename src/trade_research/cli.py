@@ -15,15 +15,18 @@ from sqlalchemy import select
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker
 
+from trade_research.adapters import BraveSearchAdapter, OpenAIClaimExtractor, ProviderUnavailable
 from trade_research.db import (
     CoverageRecordRow,
     audit_coverage,
     database_url,
     engine_for,
+    seed_federal_overlays,
     seed_primary_inventory,
 )
 from trade_research.graph import ResearchPipeline
 from trade_research.models import CuratedClaim, ResearchRequest, SourceCandidate
+from trade_research.national import NationwideTradeCertificationGraph
 from trade_research.registry import JURISDICTIONS, REQUIRED_TRADES
 
 app = typer.Typer(help="Evidence-first US trade certification research")
@@ -57,6 +60,8 @@ def run(
     claims_file: Path | None = typer.Option(
         None, help="JSON array of human-curated candidate claims"
     ),
+    auto_discover: bool = typer.Option(False, help="Use configured Brave search for discovery"),
+    auto_extract: bool = typer.Option(False, help="Use configured model for candidate claims"),
 ) -> None:
     """Retrieve supplied sources and retain only verifiable candidate passages."""
     try:
@@ -78,11 +83,25 @@ def run(
             raise typer.BadParameter("Claims file must contain a JSON array")
         claims = [CuratedClaim.model_validate(item) for item in payload]
     engine = engine_for()
-    pipeline = ResearchPipeline(sessionmaker(engine), _artifact_dir())
-    with _checkpointer_context() as checkpointer:
-        if checkpointer is not None:
-            checkpointer.setup()
-        result = pipeline.run(request, sources, claims, checkpointer=checkpointer)
+    try:
+        search_adapter = BraveSearchAdapter() if auto_discover else None
+        extractor = OpenAIClaimExtractor() if auto_extract else None
+    except ProviderUnavailable as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    try:
+        pipeline = ResearchPipeline(
+            sessionmaker(engine),
+            _artifact_dir(),
+            search_adapter=search_adapter,
+            claim_extractor=extractor,
+        )
+        with _checkpointer_context() as checkpointer:
+            if checkpointer is not None:
+                checkpointer.setup()
+            result = pipeline.run(request, sources, claims, checkpointer=checkpointer)
+    finally:
+        if search_adapter is not None:
+            search_adapter.close()
     typer.echo(result.model_dump_json(indent=2))
 
 
@@ -107,8 +126,30 @@ def seed() -> None:
     engine = engine_for()
     with sessionmaker(engine)() as session:
         created = seed_primary_inventory(session)
+        federal = seed_federal_overlays(session)
         session.commit()
-    typer.echo(f"Created {created} pending jurisdiction/trade inventories")
+    typer.echo(
+        f"Created {created} pending jurisdiction/trade inventories and {federal} federal overlays"
+    )
+
+
+@nationwide_app.command("run")
+def nationwide_run(
+    targets_file: Path | None = typer.Option(None, help="JSONL of official crawl targets"),
+    resume: bool = typer.Option(True, help="Resume the latest incomplete national run"),
+    max_jobs: int = typer.Option(20, min=1, max=394),
+    max_pages: int = typer.Option(8, min=1, max=100),
+) -> None:
+    """Queue all US work, crawl a batch, and retain review status."""
+    engine = engine_for()
+    graph = NationwideTradeCertificationGraph(sessionmaker(engine), _artifact_dir())
+    result = graph.run(
+        resume=resume,
+        targets_file=targets_file,
+        max_jobs=max_jobs,
+        max_pages=max_pages,
+    )
+    typer.echo(json.dumps(result, indent=2))
 
 
 @coverage_app.command("audit")
