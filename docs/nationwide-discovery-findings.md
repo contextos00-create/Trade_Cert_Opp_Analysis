@@ -66,3 +66,7 @@ Search snippets and model output never satisfy this gate. The current national a
 | Retry behavior | The database queue survives separate batch runs, but automatic discovery currently selects queued jobs only. A blocked job can be retried with a supplied target file; add bounded automatic retry and an explicit source-access resolution path before unattended national operation. |
 
 The environment configuration draft contains Ohio access plus proposed nationwide government domains and search/model secret requirements. Draft persistence does not establish that those changes are active. Until access and values are supplied, manual official target files can exercise the crawler, while automated nationwide discovery remains queued.
+
+## Other files added to the repository during this pass
+
+The latest `main` also contains [`run_lane.py`](../run_lane.py), [`trade_schema.json`](../trade_schema.json), and a [Python workflow](../.github/workflows/python-app.yml). `run_lane.py` is a demonstration: it creates sample exam names, code cycles, passing scores, and feasibility scores from hard-coded values. Those values have no source citations and must not enter the research ledger as verified facts. `trade_schema.json` is likewise an initial shape, without territories, evidence links, effective dates, or the review states needed by the build document. The workflow installs Python 3.10 and does not install this project's `uv` dependencies, while `pyproject.toml` requires Python 3.12 or newer. Update that workflow before relying on its result as a test gate.
